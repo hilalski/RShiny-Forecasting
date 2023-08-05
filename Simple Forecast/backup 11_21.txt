@@ -1,0 +1,244 @@
+library(shiny)
+library(plotly)
+library(shinycssloaders)
+library(shinythemes)
+library(shinydashboard)
+library(plyr)
+library(rintrojs)
+library(DT)
+library(forecast)
+library(haven)
+library(leaflet)
+library(RColorBrewer)
+library(sf)
+library(dplyr)
+library(readxl)
+
+file_choices <- c("Temp in F, USA 1925 - 2022.csv")
+df <- read.csv("Temp in F, USA 1925 - 2022.csv", header = TRUE, sep = ",")
+fcast <- 1:10
+
+ui <- dashboardPage(
+  dashboardHeader(title = "Your Dashboard"),
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Select Data", tabName = "pilih_data"),
+      menuItem("Visualization", tabName = "visualisasikan_data"),
+      menuItem("Forecast", tabName = "forecast"),
+      menuItem("About", tabName = "tentang")
+    )
+  ),
+  dashboardBody(
+    tabItems(
+      tabItem(tabName = "pilih_data",
+              h2("Select Data"),
+              sidebarPanel(
+                h4("Pilih File Excel:"),
+                selectInput("file", "File:", choices = file_choices),
+                actionButton("submit", "Tampilkan Data")
+              ),
+              mainPanel(
+                h4("Data yang Dipilih:"),
+                tableOutput("selected_data")
+              )
+      ),
+      tabItem(tabName = "visualisasikan_data",
+              h2("Data Visualization"),
+              fluidRow(
+                column(width = 12,
+                       selectInput("tahun", "Pilih Tahun", c(1925:2022))
+                )
+              ),
+              fluidRow(
+                column(
+                  width = 12,
+                  leafletOutput("map")
+                )
+              )
+      ),
+      tabItem(tabName = "forecast",
+              h2("Data Forecast"),
+              fluidRow(
+                column(
+                  width = 4,
+                  tabsetPanel(id = "tabs",
+                              tabPanel("Forecasting", value = "Forecasting",
+                                       selectInput("State", "State:",
+                                                   choices = colnames(df[2:49])),
+                                       hr(),
+                                       helpText("Silakan pilih Negara Bagian, forecasting ini akan memberikan peramalan rata-rata suhu selama 9 Tahun Kedepan")
+                              ),
+                              tabPanel("Interpretation", value = "Interpretation",
+                                       numericInput("Year", "Tahun:", min = 2023, max = 2031, value = 2023),
+                                       actionButton("InterpretButton", "Interpretasi")
+                              )
+                  )
+                ),
+                column(
+                  width = 8,
+                  plotlyOutput("Plot1"),
+                  div(style = "margin-top: 20px;",
+                      verbatimTextOutput("interpretation")
+                  )
+                )
+              )
+      ),
+      tabItem(tabName = "tentang",
+              h2("About"),
+              mainPanel(
+                h3("Kelompok 4 2KS4"),
+                p("Kami adalah kelompok yang berkomitmen untuk melakukan prediksi dan analisis data dengan menggunakan berbagai metode dan algoritma."),
+                h4("Anggota Kelompok:"),
+                br(),
+                p("1. Anggota 1"),
+                p("2. Anggota 2"),
+                p("3. Anggota 3"),
+                p("4. Anggota 4"),
+                p("4. Anggota 4")
+              )
+      )
+    )
+  )
+)
+server <- function(input, output, session) {
+  showWelcome <- reactiveVal(TRUE)
+  
+  output$welcomeUI <- renderUI({
+    if (showWelcome()) {
+      div(class = "center",
+          div(
+            img(src = "path_to_your_logo.png", width = 200, height = 200),
+            h2("Your Tagline"),
+            actionButton("continueButton", "Continue", class = "btn btn-primary")
+          )
+      )
+    }
+  })
+  
+  selected_data <- reactive({
+    req(input$file)
+    data <- read.csv(input$file)
+    data
+  })
+  
+  output$selected_data <- renderTable({
+    if (input$submit > 0) {
+      selected_data()
+    }
+  })
+  
+  observeEvent(input$continueButton, {
+    showWelcome(FALSE)
+  })
+  
+  observe({
+    if (!showWelcome()) {
+      updateTabItems(session, "sidebar", selected = "pilih_data")
+    }
+  })
+  
+  output$map <- renderLeaflet({
+    data <- read_xlsx("Temp in F, USA 1925 - 2022.xlsx")
+    usa <- read_sf("States_shapefile.shp")
+    usa_map <- usa %>% dplyr::select(State_Name) %>% subset(State_Name != "DISTRICT OF COLUMBIA" & State_Name != "HAWAII")
+    jml <- data %>% subset(Year == input$tahun) %>% dplyr::select(-Year)
+    usa_map <- usa_map %>% tibble::add_column(t(jml))
+    pal <- colorNumeric(
+      palette = "YlOrRd",
+      domain = usa_map$`t(jml)`
+    )
+    leaflet(usa_map) %>% 
+      addTiles() %>%
+      addPolygons(
+        color = ~pal(`t(jml)`),
+        weight = 2,
+        opacity = 1,
+        dashArray = "solid",
+        fillOpacity = 0.7,
+        highlight = highlightOptions(
+          weight = 1,
+          color = "#666",
+          dashArray = "",
+          fillOpacity = 0.7,
+          bringToFront = TRUE
+        ),
+        label = paste0(usa_map$State_Name, " ", usa_map$`t(jml)`, " \u00B0F"),
+        labelOptions = labelOptions(
+          style = list("font-weight" = "normal", padding = "3px"),
+          textsize = "15px",
+          direction = "auto"
+        )
+      ) %>% 
+      addLegend(
+        position = "bottomleft",
+        pal = pal,
+        values = ~`t(jml)`,
+        title = "Temperatur"
+      )
+  })
+  
+  forecast_values <- reactive({
+    state_col <- colnames(df) == input$State
+    state_data <- df[, state_col]
+    arima_model <- auto.arima(state_data)
+    forecast(arima_model, h = 9)
+  })
+  
+  output$Plot1 <- renderPlotly({
+    state_col <- colnames(df) == input$State
+    state_data <- df[, state_col]
+    forecast_values_data <- forecast_values()
+    
+    plot_ly() %>%
+      add_trace(x = df$Year, y = state_data, name = 'Data sesungguhnya',
+                type = 'scatter', mode = 'lines', line = list(color = 'cyan', width = 4)) %>%
+      add_trace(x = c(2023:2031), y = forecast_values_data$mean, name = 'Data forecast',
+                line = list(color = 'red', width = 4, dash = 'line')) %>%
+      layout(title = 'FORECASTING',
+             xaxis = list(title = 'Tahun', range = c(1925, 2031)),
+             yaxis = list(title = 'Suhu'),
+             margin = list(l = 80, r = 50, b = 50, t = 80))
+  })
+  
+  interpretation <- reactiveVal("")
+  
+  observeEvent(input$InterpretButton, {
+    forecast_values_data <- forecast_values()
+    interpretation_val <- paste("Interpretasi forecast untuk negara bagian", input$State, "pada tahun", input$Year, ":")
+    interpretation_val <- c(interpretation_val, "")
+    interpretation_val <- c(interpretation_val, paste("Tahun", input$Year, ": Rata-rata suhu diprediksi sekitar", round(forecast_values_data$mean[input$Year - 2022], 2), "F"))
+    interpretation(interpretation_val)
+  })
+  
+  output$interpretation <- renderText({
+    interpretation()
+  })
+  
+  observeEvent(input$exitButton, {
+    showModal(modalDialog(
+      title = "Confirmation",
+      "Are you sure you want to exit?",
+      footer = tagList(
+        actionButton("cancelExit", "Cancel"),
+        modalButton("exit", "Exit")
+      )
+    ))
+  })
+  
+  observeEvent(input$exit, {
+    removeModal()
+    stopApp()
+  })
+  
+  observeEvent(input$cancelExit, {
+    removeModal()
+  })
+}
+
+# Handle sidebar menu item clicks
+observeEvent(input$sidebarMenu, {
+  selected_tab <- input$sidebarMenu
+  updateTabItems(session, "sidebarMenu", selected = selected_tab)
+})
+
+shinyApp(ui, server)

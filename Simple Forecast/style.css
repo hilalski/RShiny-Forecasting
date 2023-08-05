@@ -1,0 +1,53 @@
+* {
+  margin: 0;
+}
+
+.far fa-eye{
+  padding-right: 15px;
+}
+
+.col-sm-8:nth-child(4){
+  overflow: scroll;
+  height: 500px;
+  width: 100%;
+}
+
+.col-sm-8:nth-child(2){
+  height: auto;
+  width: 100%;
+}
+
+.col-sm-4 {
+  float: none;
+}
+
+hr {
+  border: 1px solid #4C78A8;
+}
+
+#interpretation {
+  background: none;
+  border: none;
+  color: #333333;
+  z-index: 9;
+}
+
+.btn {
+  background-color: #3c8dbc;
+  border: none;
+  color: white;
+}
+
+.selectize-control single plugin-selectize-plugin-a11y {
+  z-index: 99999;
+}
+
+.leaflet-top leaflet-left , .leaflet-bottom leaflet-left {
+  z-index: 0;
+}
+
+.well {
+  background-color: #222d32;
+  color: white;
+}
+
